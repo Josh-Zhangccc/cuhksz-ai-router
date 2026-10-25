@@ -201,6 +201,8 @@ def messages_to_content(messages: list, tools: list | None = None,
     服务端会话续问（session 连续）时上游记得模型说过什么，回显冗余易致重复，须关。"""
     parts = []
     tc_names = {}  # tool_call_id -> 工具名（tool 结果消息回填用）
+    poison = ("未知工具", "没有可用的", "TOOLS PROTOCOL", "裸 JSON", "平台通告",
+              "not available in this session", "don't have a bash", "no shell")
     for m in messages:
         role, c = m.get("role"), _text_of(m.get("content"))
         if role == "system":
@@ -208,6 +210,13 @@ def messages_to_content(messages: list, tools: list | None = None,
         elif role == "user":
             parts.append(c)
         elif role == "assistant":
+            # 历史消毒：工具轮里，早前因通道问题拒答的 assistant 发言会把
+            # "工具不存在"的信念重放给模型（实测毒化整个会话）。改写为中性占位。
+            if tools and c and any(k in c for k in poison):
+                parts.append("[Your previous reply: that turn failed due to a temporary channel "
+                             "misconfiguration. The tool environment is working now.]")
+                continue
+            tcs = m.get("tool_calls") or []
             tcs = m.get("tool_calls") or []
             for tc in tcs:
                 f = tc.get("function", {})
