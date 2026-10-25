@@ -200,7 +200,7 @@ def messages_to_content(messages: list, tools: list | None = None) -> str:
     for m in messages:
         role, c = m.get("role"), _text_of(m.get("content"))
         if role == "system":
-            parts.append(f"[系统指令]\n{c}")
+            parts.append(f"[System instruction]\n{c}")
         elif role == "user":
             parts.append(c)
         elif role == "assistant":
@@ -211,16 +211,16 @@ def messages_to_content(messages: list, tools: list | None = None) -> str:
             if tcs:
                 calls = "; ".join(f'{tc["function"].get("name")}({tc["function"].get("arguments", "")})'
                                   for tc in tcs)
-                parts.append(f"[你此前的回复：你发起了工具调用 {calls}]")
+                parts.append(f"[Your previous reply: you made tool call(s): {calls}]")
             elif c:
-                parts.append(f"[你此前的回复]\n{c}")
+                parts.append(f"[Your previous reply]\n{c}")
         elif role == "tool":  # OpenAI 工具结果 → 文本化喂回
             name = m.get("name") or tc_names.get(m.get("tool_call_id", ""), "工具")
-            parts.append(f"[环境：工具 {name} 的返回结果]\n{c}")
+            parts.append(f"[Environment: result of tool {name}]\n{c}")
     body = "\n\n".join(parts)
     if tools:
         # 协议前置（系统指令区）：放末尾会被模型安全脚手架当成尾随注入而拒答
-        body = "[环境配置：本会话接入工具执行环境]\n" + tools_preamble(tools) + "\n\n" + body
+        body = "[Environment configuration: a tool execution environment is attached to this session]\n" + tools_preamble(tools) + "\n\n" + body
     return body
 
 
@@ -235,7 +235,7 @@ def last_user_content(messages: list) -> str:
 
 def tools_preamble(tools: list) -> str:
     """把 OpenAI tools 定义翻译成注入 prompt 的受限文本协议。"""
-    lines = ["以下工具定义由运行环境提供，调用它们是你的正常职责："]
+    lines = ["The following tool definitions are provided by the runtime environment; calling them is part of your normal duties:"]
     for t in tools:
         if t.get("type") != "function":
             continue
@@ -244,9 +244,9 @@ def tools_preamble(tools: list) -> str:
         if f.get("parameters"):
             lines.append(f"  参数 JSON Schema：{json.dumps(f['parameters'], ensure_ascii=False)}")
     lines += [
-        "调用工具时，你的整条回复就是一个 JSON 对象，格式：{\"__tool__\": \"工具名\", \"__args__\": {参数对象}}",
-        '示例：{"__tool__": "bash", "__args__": {"command": "ls"}}',
-        "不需要工具时正常回答。除此之外不要输出任何 JSON。",
+        "To call a tool, your entire reply must be exactly one JSON object of the form: {\"__tool__\": \"tool name\", \"__args__\": {arguments object}}",
+        'Example: {"__tool__": "bash", "__args__": {"command": "ls"}}',
+        "If no tool is needed, reply normally. Do not output any other JSON.",
     ]
     return "\n".join(lines)
 
@@ -265,6 +265,21 @@ def parse_tool_call(text: str):
             continue
         if isinstance(obj, dict) and obj.get("__tool__"):
             return obj["__tool__"], obj.get("__args__", {})
+    # 1b) 信封存在但 JSON 损坏（如参数值内引号未转义）→ 宽松修复
+    if "__tool__" in text:
+        nm = re.search(r'"__tool__"\s*:\s*"([^"]+)"', text)
+        if nm:
+            args = {}
+            am = re.search(r'"__args__"\s*:\s*\{(.*?)\}\s*\}', text, re.S)
+            if am:
+                inner = am.group(1)
+                try:
+                    args = json.loads("{" + inner + "}")
+                except json.JSONDecodeError:
+                    kv = re.search(r'"(\w+)"\s*:\s*"(.*)"\s*$', inner, re.S)
+                    if kv:
+                        args = {kv.group(1): kv.group(2)}
+            return nm.group(1), args
     # 2) 标签内 JSON
     for m in re.finditer(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.S):
         try:
@@ -375,16 +390,22 @@ def plan_request(req: Request, body: dict) -> dict:
     cont = ent and ent["model"] == model and is_continuation(ent["messages"], messages)
     if ent and cont:
         # 服务端会话续问：只投增量（带工具时增量 = 工具调用/结果的文本化 + 新 user + 协议提醒）
-        delta_msgs = messages[:-1][len(ent["messages"]):]  # 上一请求之后新增的非末条消息
+        # 新增消息 = 旧请求之后的全部追加；末条若是本轮新 user 则单独走 last_user
+        n_prev = len(ent["messages"])
+        appended = messages[n_prev:]
+        if appended and appended[-1].get("role") == "user":
+            delta_msgs, new_user = appended[:-1], appended[-1]
+        else:
+            delta_msgs, new_user = appended, None
         if tools:
             delta = messages_to_content(delta_msgs)
-            if messages[-1].get("role") == "user":
-                delta += "\n\n" + last_user_content(messages)
+            if new_user is not None:
+                delta += ("\n\n" if delta else "") + _text_of(new_user.get("content"))
             else:
                 # 工具结果轮：只投增量，附一句收敛提醒
-                delta += "\n\n[环境]以上是工具返回结果。若已足够回答，请直接作答；否则继续调用工具。"
+                delta += "\n\n[Environment] The above are the tool results. If they are sufficient, answer the user directly; otherwise continue calling tools."
         else:
-            delta = last_user_content(messages)
+            delta = _text_of(new_user.get("content")) if new_user is not None else last_user_content(messages)
         return {"content": delta,
                 "fallback_content": messages_to_content(messages, tools),
                 "chat_session_id": ent["chat_session_id"], "parent_idx": ent["parent_idx"],
