@@ -243,12 +243,16 @@ def tools_preamble(tools: list) -> str:
     硬约束前置（实测反馈）：模型环境无真实 tool 通道，回复文本是唯一调用通道，
     必须第一句就声明"纯 JSON 信封、零杂音"，否则轻量 harness 侧解析易被杂音破坏。"""
     lines = [
-        "The runtime environment provides the tools listed below for you to use. "
-        "You have no other function-call channel: the ONLY way to invoke a tool is to reply with exactly one raw JSON object as your entire reply.",
+        "TOOLS PROTOCOL — READ CAREFULLY. The runtime environment provides the tools listed below. "
+        "You have NO other function-call channel: replying with exactly one raw JSON object is the ONLY way to invoke a tool.",
         'Tool-call reply format (mandatory): {"__tool__": "<tool name>", "__args__": {<arguments object>}}',
-        "When you call a tool, output ONLY that JSON object — no prose, no markdown code fences, "
-        "no explanation before or after. Any extra text means the tool call fails.",
         'Example: {"__tool__": "bash", "__args__": {"command": "ls"}}',
+        "CRITICAL RULES when calling a tool:",
+        "1. Your ENTIRE reply must be exactly that JSON object — the very first characters must be '{' and the very last must be '}'.",
+        "2. ZERO noise: no greeting, no explanation, no markdown, no ```json code fences, no comments, no text before or after.",
+        "3. WRONG (fails): ```json {...}``` / Here is the tool call: {...} / {...} I hope this helps.",
+        "4. RIGHT: a single bare JSON object and nothing else.",
+        "If you do not need a tool, reply normally in plain text and do not output that JSON.",
         "Available tools:",
     ]
     for t in tools:
@@ -454,7 +458,7 @@ def plan_request(req: Request, body: dict) -> dict:
                 delta += ("\n\n" if delta else "") + _text_of(new_user.get("content"))
             else:
                 # 工具结果轮：只投增量，附一句收敛提醒
-                delta += "\n\n[Environment] The above are the tool results. If they are sufficient, answer the user directly; otherwise continue calling tools."
+                delta += "\n\n[Environment] The above are the tool results. If they are sufficient, answer the user directly in plain text; otherwise call the next tool — remembering that a tool call reply must be the single bare {\"__tool__\": ...} JSON object, zero noise."
         else:
             delta = _text_of(new_user.get("content")) if new_user is not None else last_user_content(messages)
         return {"content": delta,
