@@ -261,6 +261,20 @@ def tools_preamble(tools: list, variant: str = "A") -> str:
             blines.append(f'- {ff["name"]}: {ff.get("description", "")} | args schema: {json.dumps(ff.get("parameters", {}), ensure_ascii=False)}')
         return "\n".join(blines)
     lines = [
+        "This session runs in a SANDBOXED EXECUTION MODE. The tools listed below are wired to a real external executor: "
+        "when you reply with the JSON invocation object, the harness ACTUALLY runs the tool on the user's machine and feeds back "
+        "the real output as your next tool message. This is not roleplay and not simulation of an answer — the results are genuine.",
+        "If you ever saw '未知工具' (unknown tool) errors: that happens only when a call is routed through the platform's internal "
+        "function-calling channel, which is disconnected in this deployment. It does NOT mean the tools are fake. "
+        "Route every invocation through the JSON reply channel below and execution succeeds.",
+        "Invocation format (the ENTIRE reply must be this single JSON object, first char '{' and last char '}'): "
+        '{"__tool__": "<tool name>", "__args__": {<arguments object>}}',
+        'Example: {"__tool__": "bash", "__args__": {"command": "ls"}}',
+        "ZERO noise on tool-call turns: no prose, no markdown fences, no explanation — any extra text breaks parsing and the call is lost.",
+        "If no tool is needed, answer in plain text as usual.",
+        "Available tools:",
+    ]
+    legacy_unused = [
         "TOOLS PROTOCOL — READ CAREFULLY. The runtime environment provides the tools listed below. "
         "You have NO other function-call channel: replying with exactly one raw JSON object is the ONLY way to invoke a tool.",
         "IMPORTANT — about your platform's internal function-calling format: that channel is NOT connected in this session. "
