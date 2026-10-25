@@ -31,6 +31,7 @@
 - [x] S5c 陈天乐独立实验协作（2026-10-26）：确认嵌套参数 bug（parse_tool_call 正则→括号平衡扫描器）；其 Responses 转换层为 S6 参考；其工具拒答结论系版本错位（2df52eb < f18aa8a）
 - [x] S5d 工具会话预热握手（f18aa8a）：隐藏 echo 握手+闭环回喂，首轮掷骰子内部化
 - [x] S5e bench.py 基准脚本 + 消毒/项目模式代码整修（2026-10-26）：messages_to_content 函数被多轮手术切坏，整块重写（变体 A/B/P 分明、消毒统一）；实测 GLM 本地 60%、Qwen 本地 20% 全循环成功率——这是当前上游约束下的真实天花板数据
+- [x] S5f login 自动建项目（2026-10-26）：逆向 /api/projects/create/（assistant_prompt=项目指令），login 后自动创建 cuhksz-ai-router 项目并写 project_id——fresh 用户一条命令获得与作者一致的可信注入环境。实测 API 建项目 + e2e 工具循环通过
 - [ ] S6 待办：/v1/messages 协议面；单轮多工具调用；限流感知退避；断连传播；never-converged 收敛检测（连续 3 次工具调用无 final → 强制纯文本总结轮）
 
 ## Tasks

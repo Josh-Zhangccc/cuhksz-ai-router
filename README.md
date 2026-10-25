@@ -70,10 +70,13 @@ uv pip install --python .venv/bin/python fastapi uvicorn curl_cffi beautifulsoup
 ## 登录与启动
 
 ```bash
-.venv/bin/python gateway.py login     # 输入学号/密码，验证登录，写入 config.yaml (0600)
+.venv/bin/python gateway.py login     # 登录 + 自动创建工具桥接项目，全部写入 config.yaml (0600)
 .venv/bin/python gateway.py           # 启动，监听 127.0.0.1:8350
 .venv/bin/python gateway.py --debug   # 排障模式：完整请求/响应落 runtime/debug/（含 prompt，勿外传）
 ```
+
+login 会自动在平台创建一个名为 `cuhksz-ai-router` 的项目（项目指令内含工具协议，
+以平台系统身份注入——这是工具调用可靠性的关键，勿删除该项目）。
 
 - 仅适用**纯密码 SSO** 账号；开了 MFA 的账号此路不通（无解，别试）。
 - **Windows 注意**：`0600` 权限在 NTFS 上映射不全，多人共用机器上 `config.yaml` 可能被其他本地账户读取。
