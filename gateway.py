@@ -646,7 +646,17 @@ def plan_request(req: Request, body: dict) -> dict:
 
     proj = project_id()  # 全面项目模式：所有请求挂 Tool Bridge 项目
     ent = SMAP.get(key) if key else None
-    cont = ent and ent["model"] == model and is_continuation(ent["messages"], messages)
+    if ent is None and messages[-1].get("role") != "system" or (key is None and ent is None):
+        pass  # fallthrough to auto-match below
+    if ent is None:
+        # 无凭证客户端（如未配 X-Session-Id 的 dsh）→ 按历史前缀自动匹配最近会话，
+        # 实现"无头客户端"的会话复用（否则每轮新开会话+重付脚手架，极慢）
+        candidates = [(k, e) for k, e in SMAP._m.items()
+                      if e["model"] == model and is_continuation(e["messages"], messages)]
+        if candidates:
+            k, ent = max(candidates, key=lambda kv: len(kv[1]["messages"]))
+            key = k
+    cont = ent is not None and ent["model"] == model and is_continuation(ent["messages"], messages)
     if ent and cont:
         # 服务端会话续问：只投增量（session 连续 → 关 assistant 回显；增量 = 工具结果文本化 + 新 user + 协议提醒）
         # 新增消息 = 旧请求之后的全部追加；末条若是本轮新 user 则单独走 last_user
@@ -670,9 +680,11 @@ def plan_request(req: Request, body: dict) -> dict:
     # 新开/分叉：全量展平（分叉原因：无凭证/未命中/模型切换/compact/重启丢表/工具轮无会话）
     mode = "tools-new" if tools else "fresh"
     variant = "P" if proj else "A"
+    # 无凭证客户端：登记到合成键（auto:<model>），下一轮按前缀自动匹配即可续问
+    auto_key = key or (f"auto:{model}" if tools else None)
     return {"content": messages_to_content(messages, tools, variant),
             "fallback_content": None, "chat_session_id": None, "parent_idx": -1,
-            "smap_key": key, "messages": messages, "effort": effort, "model": model,
+            "smap_key": auto_key, "messages": messages, "effort": effort, "model": model,
             "tools": tools, "mode": mode, "project": proj}
 
 
