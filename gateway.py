@@ -92,6 +92,16 @@ def load_cfg() -> dict:
     return cfg
 
 
+def project_id() -> str | None:
+    """可选：平台"项目"的 id（config.yaml 的 project_id 字段）。
+    项目指令（网页上配置）会以平台系统身份携带工具协议——比 content 注入可信得多，
+    工具轮强烈建议配置。获取方式：网页创建项目 → 会话 payload 里抓 project_id。"""
+    try:
+        return (yaml.safe_load(CFG.read_text()) or {}).get("project_id") or None
+    except Exception:
+        return None
+
+
 def load_session() -> cffi_requests.Session | None:
     if not SESSION_FILE.exists():
         return None
@@ -232,7 +242,10 @@ def messages_to_content(messages: list, tools: list | None = None,
             name = m.get("name") or tc_names.get(m.get("tool_call_id", ""), "tool")
             parts.append(f"[Environment: result of tool {name}]\n{c}")
     body = "\n\n".join(parts)
-    if tools:
+    if tools and variant == "P":
+        # 项目模式：工具协议由平台"项目指令"以系统身份携带（可信），content 只消毒不注入
+        pass
+    elif tools:
         if variant == "B":
             # 变体 B：极简命令式，拼在末尾（拒答重试用，与 A 措辞/位置都不同）
             body = (body + "\n\n" if body else "") + tools_preamble(tools, variant="B")
@@ -351,8 +364,11 @@ def parse_tool_call(text: str):
             obj = json.loads(cand)
         except json.JSONDecodeError:
             continue
-        if isinstance(obj, dict) and obj.get("__tool__"):
-            return obj["__tool__"], obj.get("__args__", {})
+        if isinstance(obj, dict):
+            if obj.get("__tool__"):
+                return obj["__tool__"], obj.get("__args__", {})
+            if obj.get("tool") or obj.get("name"):  # 项目指令下模型的实际输出变体
+                return obj.get("tool") or obj.get("name"), obj.get("args") or obj.get("arguments") or {}
     # 1b) 信封存在但 JSON 损坏（如参数值内引号未转义）→ 宽松修复
     if "__tool__" in text:
         nm = re.search(r'"__tool__"\s*:\s*"([^"]+)"', text)
@@ -411,12 +427,15 @@ class UpstreamError(Exception):
         super().__init__(f"upstream {status}: {body}")
 
 
-def chat_payload(approach_id: str, content: str, effort: str, chat_session_id: str | None, parent_idx: int) -> dict:
+def chat_payload(approach_id: str, content: str, effort: str, chat_session_id: str | None,
+                 parent_idx: int, project: str | None = None) -> dict:
     p = {"approach_id": approach_id, "params": {"thinking_effort": effort},
          "content": content, "parent_idx": parent_idx, "image_ids": [], "file_ids": [],
          "quota_pool": POOL}
     if chat_session_id:
         p["chat_session_id"] = chat_session_id
+    if project:
+        p["project_id"] = project
     return p
 
 
@@ -465,12 +484,12 @@ def _chunk_notice(pos: str, n: int) -> str:
 
 
 def upstream_stream(approach_id: str, content: str, effort: str,
-                    chat_session_id: str | None, parent_idx: int):
+                    chat_session_id: str | None, parent_idx: int, project: str | None = None):
     """阻塞生成器：yield 上游事件 dict。401/403 自动重登重试一次；配额抛 429。
     运行于线程池（同步生成器），全局锁保证单飞。"""
     with _upstream_lock:
         s = get_session()
-        payload = chat_payload(approach_id, content, effort, chat_session_id, parent_idx)
+        payload = chat_payload(approach_id, content, effort, chat_session_id, parent_idx, project)
         r = post_chat(s, payload)
         if r.status_code in (401, 403):
             r.close()
@@ -556,6 +575,7 @@ def plan_request(req: Request, body: dict) -> dict:
     if not messages or not last_user_content(messages):
         raise HTTPException(400, "empty messages")
 
+    proj = project_id() if tools else None  # 项目模式仅在工具轮生效
     ent = SMAP.get(key) if key else None
     cont = ent and ent["model"] == model and is_continuation(ent["messages"], messages)
     if ent and cont:
@@ -582,13 +602,14 @@ def plan_request(req: Request, body: dict) -> dict:
                 "fallback_content": messages_to_content(messages, tools),
                 "chat_session_id": ent["chat_session_id"], "parent_idx": ent["parent_idx"],
                 "smap_key": key, "messages": messages, "effort": effort, "model": model,
-                "tools": tools, "mode": "continue"}
+                "tools": tools, "mode": "continue", "project": proj}
     # 新开/分叉：全量展平（分叉原因：无凭证/未命中/模型切换/compact/重启丢表/工具轮无会话）
     mode = "tools-new" if tools else "fresh"
-    return {"content": messages_to_content(messages, tools),
+    variant = "P" if proj else "A"
+    return {"content": messages_to_content(messages, tools, variant),
             "fallback_content": None, "chat_session_id": None, "parent_idx": -1,
             "smap_key": key, "messages": messages, "effort": effort, "model": model,
-            "tools": tools, "mode": mode}
+            "tools": tools, "mode": mode, "project": proj}
 
 
 @app.post("/v1/chat/completions")
@@ -742,10 +763,12 @@ async def chat_completions(req: Request):
         if not tc and looks_like_refusal(text):
             # 拒答 → 变体 B 协议 + 全量展平 + 新会话，重试一次
             log_event(evt="refusal-retry", model=model, head=text[:80].replace("\n", " "))
-            retry_content = messages_to_content(plan["messages"], plan["tools"], variant="B")
+            pv = plan.get("project")
+            retry_content = messages_to_content(plan["messages"], plan["tools"],
+                                                variant="P" if pv else "B")
 
             def run_retry():
-                yield from upstream_stream(approach_id, retry_content, plan["effort"], None, -1)
+                yield from upstream_stream(approach_id, retry_content, plan["effort"], None, -1, pv)
 
             def pump_retry():
                 parts = []
