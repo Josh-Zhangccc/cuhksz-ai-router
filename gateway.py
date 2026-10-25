@@ -194,7 +194,11 @@ def _text_of(content) -> str:
     return content or ""
 
 
-def messages_to_content(messages: list, tools: list | None = None) -> str:
+def messages_to_content(messages: list, tools: list | None = None,
+                        assistant_echo: bool = True) -> str:
+    """assistant_echo：是否把历史 assistant 轮标为 [Your previous reply] 回显。
+    仅凭证失效的全量重放（fresh/fork）需要——远程无历史，须靠标记区分角色；
+    服务端会话续问（session 连续）时上游记得模型说过什么，回显冗余易致重复，须关。"""
     parts = []
     tc_names = {}  # tool_call_id -> 工具名（tool 结果消息回填用）
     for m in messages:
@@ -208,14 +212,15 @@ def messages_to_content(messages: list, tools: list | None = None) -> str:
             for tc in tcs:
                 f = tc.get("function", {})
                 tc_names[tc.get("id", "")] = f.get("name", "?")
-            if tcs:
-                calls = "; ".join(f'{tc["function"].get("name")}({tc["function"].get("arguments", "")})'
-                                  for tc in tcs)
-                parts.append(f"[Your previous reply: you made tool call(s): {calls}]")
-            elif c:
-                parts.append(f"[Your previous reply]\n{c}")
-        elif role == "tool":  # OpenAI 工具结果 → 文本化喂回
-            name = m.get("name") or tc_names.get(m.get("tool_call_id", ""), "工具")
+            if assistant_echo:
+                if tcs:
+                    calls = "; ".join(f'{tc["function"].get("name")}({tc["function"].get("arguments", "")})'
+                                      for tc in tcs)
+                    parts.append(f"[Your previous reply: you made tool call(s): {calls}]")
+                elif c:
+                    parts.append(f"[Your previous reply]\n{c}")
+        elif role == "tool":  # OpenAI 工具结果 → 文本化喂回（环境输入，任何模式都必须喂）
+            name = m.get("name") or tc_names.get(m.get("tool_call_id", ""), "tool")
             parts.append(f"[Environment: result of tool {name}]\n{c}")
     body = "\n\n".join(parts)
     if tools:
@@ -435,7 +440,7 @@ def plan_request(req: Request, body: dict) -> dict:
     ent = SMAP.get(key) if key else None
     cont = ent and ent["model"] == model and is_continuation(ent["messages"], messages)
     if ent and cont:
-        # 服务端会话续问：只投增量（带工具时增量 = 工具调用/结果的文本化 + 新 user + 协议提醒）
+        # 服务端会话续问：只投增量（session 连续 → 关 assistant 回显；增量 = 工具结果文本化 + 新 user + 协议提醒）
         # 新增消息 = 旧请求之后的全部追加；末条若是本轮新 user 则单独走 last_user
         n_prev = len(ent["messages"])
         appended = messages[n_prev:]
@@ -444,7 +449,7 @@ def plan_request(req: Request, body: dict) -> dict:
         else:
             delta_msgs, new_user = appended, None
         if tools:
-            delta = messages_to_content(delta_msgs)
+            delta = messages_to_content(delta_msgs, assistant_echo=False)
             if new_user is not None:
                 delta += ("\n\n" if delta else "") + _text_of(new_user.get("content"))
             else:
