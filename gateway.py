@@ -309,10 +309,37 @@ def parse_tool_call(text: str):
     2) <tool_call>{"name":...,"arguments":{...}}</tool_call>（Qwen 标签内 JSON）
     3) <tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value>...</tool_call>（标签流漂移）
     返回 (name, args) 或 None。"""
-    # 1) JSON 信封（含代码块内）
-    for m in re.finditer(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.S):
+    # 1) JSON 信封（含代码块内）。括号平衡扫描器：支持任意嵌套深度
+    #    （正则版只支持一层嵌套，嵌套参数会被截断丢失——陈天乐报告 2026-10-26）
+    def _balanced_objects(s):
+        i, n = 0, len(s)
+        while i < n:
+            if s[i] == '{':
+                depth, j, in_str, esc = 0, i, False, False
+                while j < n:
+                    ch = s[j]
+                    if in_str:
+                        if esc: esc = False
+                        elif ch == '\\': esc = True
+                        elif ch == '"': in_str = False
+                    else:
+                        if ch == '"': in_str = True
+                        elif ch == '{': depth += 1
+                        elif ch == '}':
+                            depth -= 1
+                            if depth == 0:
+                                yield s[i:j+1]
+                                i = j
+                                break
+                    j += 1
+                else:
+                    break
+            i += 1
+    for cand in _balanced_objects(text):
+        if '"__tool__"' not in cand:
+            continue
         try:
-            obj = json.loads(m.group(0))
+            obj = json.loads(cand)
         except json.JSONDecodeError:
             continue
         if isinstance(obj, dict) and obj.get("__tool__"):
