@@ -24,6 +24,7 @@
 - [x] S4c 工具轮接入服务端会话（2026-10-25）：增量=工具调用/结果文本化+收敛提醒；修两处（assistant tool_calls 拍空串、工具结果轮重复拼旧 user）；确认模型注入防御特性（协议须前置、"暗号"类措辞触发拒答）——沉淀至 docs/protocol.md
 - [x] S3b 运行日志（2026-10-25）：runtime/router.ndjson 元数据 only（mode/latency/finish/tool_parse_ok，绝不记内容）+ --debug 完整落盘（runtime/debug/ 含 prompt，勿外传）
 - [x] S5 发布（2026-10-25）：README（三平台+警告+局限）+ docs/protocol.md + MIT；GitHub 私有仓 Josh-Zhangccc/cuhksz-ai-router，v0.1
+- [x] S7 超长 content 分轮投递（2026-10-25）：ZCode（33 工具全量定义 ~150K 字符）触发上游 content 长度硬限——实测 98,315 字符过 / 114,699 拒（与 token 密度无关，纯字符限）。解法定为分轮预热投递（零信息损失）：新会话 content 超 CHUNK_SAFE=80K 时按行边界分片，前 n-1 片带 transport notice（仅入库勿作答，其回复事件不下发防污染信封解析），末片不带 notice（形态与单轮全量一致，防注入防御误判），句柄经 start 事件串联；SMAP 中途态由前缀校验自愈。149K 工具集实测 tool_calls 语义正确；fresh/continue/小工具/流式回归通过
 - [ ] S6 待办：/v1/messages 协议面；单轮多工具调用；限流感知退避（x-ratelimit-remaining）；客户端断连传播到上游
 
 ## Tasks
@@ -32,6 +33,7 @@
 - [x] dsh 接入验证：headless + patch overlay（llm-pi-ai 自定义路由 api: openai-completions + 模型目录）真实对话成功；overlay 存 wiki/tmp/cuhk-gateway.patch.yml
 - [x] 多轮对话策略定型（2026-10-25）：X-Session-Id 凭证 → {chat_session_id, parent_idx} 内存映射，续问只投增量；前缀校验失败（compact/历史改写/重启丢表）自动分叉全量重放；无 X-Session-Id 保持无状态拼接模式
 - [x] 续问契约抓包（2026-10-25）：续问 = 同端点带 chat_session_id + parent_idx=最后消息 self_idx；/getHistoryItem/ 可查完整消息树；上游为真流式 NDJSON
+- [x] 上游限制边界实测（2026-10-25）：POST /chat/ content 字段单次 ~10 万字符硬限（98,315 过 / 114,699 拒，402/429 无关、空 body 400），token 密度无关 → 大工具集（ZCode 33 工具 ~150K）必须分轮，见 S7
 - [ ] 上游 system 脚手架无法去除——system prompt 以首条 content 前置模拟，效果边界已向用户说明
 
 ## Decisions

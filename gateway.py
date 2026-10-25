@@ -328,6 +328,44 @@ def post_chat(s, payload: dict):
                   data=json.dumps(payload), timeout=300, stream=True)
 
 
+# ---------- 超长 content 分轮投递（上游单次 content 限 ~10 万字符，2026-10-25 实测） ----------
+
+# 实测 98,315 字符过 / 114,699 拒；单片留余量取 80K
+CHUNK_SAFE = 80_000
+
+
+def chunk_content(content: str) -> list[str]:
+    """按行边界把超限 content 切成 ≤ CHUNK_SAFE 的片（行切分保证协议 JSON 不截断；
+    单行超限才硬切）。不超限返回单元素列表，行为与不分片完全一致。"""
+    if len(content) <= CHUNK_SAFE:
+        return [content]
+    chunks, cur, cur_len = [], [], 0
+
+    def push_line(ln: str):
+        nonlocal cur, cur_len
+        w = len(ln) + 1
+        if cur and cur_len + w > CHUNK_SAFE:
+            chunks.append("\n".join(cur))
+            cur, cur_len = [], 0
+        cur.append(ln)
+        cur_len += len(ln) + 1
+
+    for ln in content.split("\n"):
+        while len(ln) + 1 > CHUNK_SAFE:  # 单行超限：硬切
+            push_line(ln[:CHUNK_SAFE - 1])
+            ln = ln[CHUNK_SAFE - 1:]
+        push_line(ln)
+    if cur:
+        chunks.append("\n".join(cur))
+    return chunks
+
+
+def _chunk_notice(pos: str, n: int) -> str:
+    return (f"[Environment transport notice] Environment configuration is delivered in {n} parts "
+            f"due to transport size limits. This is {pos}. Absorb it silently and wait for the next part; "
+            "do not answer yet.")
+
+
 def upstream_stream(approach_id: str, content: str, effort: str,
                     chat_session_id: str | None, parent_idx: int):
     """阻塞生成器：yield 上游事件 dict。401/403 自动重登重试一次；配额抛 429。
@@ -436,16 +474,37 @@ async def chat_completions(req: Request):
                        "messages": body.get("messages"), "tools": plan["tools"]})
 
     def run_events():
-        """线程内执行上游调用；远程会话失效时分叉重开一次（用全量展平兜底）。"""
+        """线程内执行上游调用。content 超限时分轮预热投递（前 n-1 片仅入库、
+        句柄经 start 事件串联，末片带真实内容）；远程会话失效时分叉重开一次。"""
+        def emit(content, csid, pidx):
+            chunks = chunk_content(content)
+            if len(chunks) > 1:
+                log_event(evt="chunked-replay", model=model, parts=len(chunks),
+                          chars=len(content))
+            for i, ch in enumerate(chunks):
+                final = i == len(chunks) - 1
+                # 末片不加任何 notice：形态与单轮全量一致，模型不感知分片；
+                # 预热片加等待指令且其回复事件不下发（拼进正文会污染 tool 信封解析）
+                if not final and len(chunks) > 1:
+                    ch = _chunk_notice(f"part {i + 1}/{len(chunks)}", len(chunks)) + "\n\n" + ch
+                start_ev = None
+                for obj in upstream_stream(approach_id, ch, plan["effort"], csid, pidx):
+                    if obj.get("event") == "start":
+                        start_ev = obj
+                    if final or obj.get("event") != "msg":
+                        yield obj
+                if start_ev is not None:
+                    csid = start_ev["chat_session_id"]
+                    pidx = start_ev.get("approach_msg_idx", 0)
+
         try:
-            yield from upstream_stream(approach_id, plan["content"], plan["effort"],
-                                       plan["chat_session_id"], plan["parent_idx"])
+            yield from emit(plan["content"], plan["chat_session_id"], plan["parent_idx"])
         except UpstreamError as e:
             if plan["smap_key"] and plan["chat_session_id"] is not None and e.status in (400, 404, 410):
                 SMAP.drop(plan["smap_key"])
                 log_event(evt="fork-fallback", reason=f"upstream {e.status}", model=model)
                 content = plan.get("fallback_content") or plan["content"]
-                yield from upstream_stream(approach_id, content, plan["effort"], None, -1)
+                yield from emit(content, None, -1)
             else:
                 raise
 
