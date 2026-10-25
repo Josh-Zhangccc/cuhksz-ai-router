@@ -25,8 +25,35 @@ ai.cuhk.edu.cn  ←─ 配额记账在你自己的 Students Pool
 - 服务端会话续问：`X-Session-Id` 头（任意本地凭证）→ 上游 `chat_session_id` 映射，多轮只投增量
 - compact 自愈：客户端压缩/改写历史时前缀校验自动分叉新会话，路由器重启丢表同样自愈
 - emulated 工具调用：`tools` 参数翻译为受限文本协议，模型输出解析回标准 `tool_calls`（多格式容错）
-- 13 个模型目录，其中 GLM 5.3 Flash / Qwen3.8 27B 为**本地部署版，不消耗云端配额**
 - 运行日志：`runtime/router.ndjson` 每请求一行元数据（绝不记内容）
+
+## 模型列表
+
+12 个模型，全部经网页实测抓取 approach_id（无统一命名规律，别自己猜，以本表为准）：
+
+| model 名（配置填这个） | 网页展示名 | approach_id（上游真实 id） | 配额 |
+|---|---|---|---|
+| `glm-5.3-flash-local` | GLM 5.3 Flash（本地版） | `glm-5.3-flash` | **不计刷量** |
+| `qwen3.8-27b-local` | Qwen3.8 27B（本地版） | `qwen3.8-27b` | **不计刷量** |
+| `claude-haiku-5-5` | Claude Haiku 5.5 | `claude-haiku-5-5` | 计量 |
+| `doubao-seed-evolving` | 豆包 Seed Evolving | `doubao-seed-evolving` | 计量 |
+| `doubao-seed-2-1-pro` | 豆包 Seed 2.1 Pro | `doubao-seed-2-1-pro-260915` | 计量 |
+| `doubao-seed-2-1-turbo` | 豆包 Seed 2.1 Turbo | `doubao-seed-2-1-turbo-260628` | 计量 |
+| `deepseek-v4-pro` | DeepSeek V4 Pro | `deepseek-v4-pro` | 计量 |
+| `deepseek-flash` | DeepSeek V4.1 Flash | `deepseek-flash` | 计量 |
+| `gemini-3.8-flash` | Gemini 3.8 Flash | `gemini-3.8-flash` | 计量 |
+| `gemini-3.5-flash-lite` | Gemini 3.5 Flash-Lite | `gemini-3.5-flash-lite` | 计量 |
+| `minimax-m3` | MiniMax M3 | `minimax-m3` | 计量 |
+| `gpt-6-luna` | GPT 6 Luna | `gpt-6-luna` | 计量 |
+
+> **请优先使用前两个本地部署模型**（名字带 `-local`）。它们跑在学校本地集群上，
+> **不消耗你的 Students Pool 云端配额**——给 agent 高频调用、日常问答、子代理任务
+> 都应该用它们；云端计量模型留给确实需要更强能力的关键任务。限流为 120 请求/周期，
+> 多 harness 共用时省着点用。
+>
+> 命名无规律可循（点号有时保留有时变横线、豆包带内部日期后缀、DeepSeek V4.1 Flash
+> 的 id 干脆叫 `deepseek-flash`）。学校改版后若某模型报 400，重抓 approach_id 即可，
+> 方法见 [docs/protocol.md](docs/protocol.md)。
 
 ## 安装（Linux / Windows / macOS 通用）
 
@@ -79,8 +106,8 @@ cuhksz:
   apiKeyEnv: CUHK_GATEWAY_KEY
   api: openai-completions
   models:
-    - id: glm-5.3-flash-local
-    - id: qwen3.8-27b-local
+    - id: glm-5.3-flash-local   # 优先：本地部署，不计配额
+    - id: qwen3.8-27b-local     # 优先：本地部署，不计配额
 ```
 
 ### 局限（如实说）
