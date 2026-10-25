@@ -21,6 +21,10 @@
 - [x] S3 稳定化：429/配额熔断、会话自动重登、超时与取消、多轮 parent_idx 映射（含真流式 NDJSON→SSE）
 - [x] S4a emulated tool loop（2026-10-25）：tools 定义→受限文本协议注入；模型输出 {"__tool__","__args__"} 信封→解析回 OpenAI tool_calls（finish_reason=tool_calls）；tool 结果消息→"[工具 x 返回结果]"文本喂回。dsh headless 真实 bash 工具循环实测通过。边界：工具轮走无状态展平（每轮独立上游会话，成本高）；单轮单工具调用；stream+tools 为攒完转发
 - [x] S4b 并发修复（2026-10-25）：同步 pump 曾在 async 处理器内迭代阻塞事件循环（全服务假死，health 挂起），改 asyncio.to_thread 收集，实测工具请求进行中 health 延迟 0.01s
+- [x] S4c 工具轮接入服务端会话（2026-10-25）：增量=工具调用/结果文本化+收敛提醒；修两处（assistant tool_calls 拍空串、工具结果轮重复拼旧 user）；确认模型注入防御特性（协议须前置、"暗号"类措辞触发拒答）——沉淀至 docs/protocol.md
+- [x] S3b 运行日志（2026-10-25）：runtime/router.ndjson 元数据 only（mode/latency/finish/tool_parse_ok，绝不记内容）+ --debug 完整落盘（runtime/debug/ 含 prompt，勿外传）
+- [x] S5 发布（2026-10-25）：README（三平台+警告+局限）+ docs/protocol.md + MIT；GitHub 私有仓 Josh-Zhangccc/cuhksz-ai-router，v0.1
+- [ ] S6 待办：/v1/messages 协议面；单轮多工具调用；限流感知退避（x-ratelimit-remaining）；客户端断连传播到上游
 
 ## Tasks
 
