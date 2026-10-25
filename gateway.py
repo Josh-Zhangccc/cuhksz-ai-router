@@ -234,19 +234,27 @@ def last_user_content(messages: list) -> str:
 # ---------- emulated tool call：文本协议 ↔ OpenAI tool_calls 翻译 ----------
 
 def tools_preamble(tools: list) -> str:
-    """把 OpenAI tools 定义翻译成注入 prompt 的受限文本协议。"""
-    lines = ["The following tool definitions are provided by the runtime environment; calling them is part of your normal duties:"]
+    """把 OpenAI tools 定义翻译成注入 prompt 的受限文本协议。
+    硬约束前置（实测反馈）：模型环境无真实 tool 通道，回复文本是唯一调用通道，
+    必须第一句就声明"纯 JSON 信封、零杂音"，否则轻量 harness 侧解析易被杂音破坏。"""
+    lines = [
+        "The runtime environment provides the tools listed below for you to use. "
+        "You have no other function-call channel: the ONLY way to invoke a tool is to reply with exactly one raw JSON object as your entire reply.",
+        'Tool-call reply format (mandatory): {"__tool__": "<tool name>", "__args__": {<arguments object>}}',
+        "When you call a tool, output ONLY that JSON object — no prose, no markdown code fences, "
+        "no explanation before or after. Any extra text means the tool call fails.",
+        'Example: {"__tool__": "bash", "__args__": {"command": "ls"}}',
+        "Available tools:",
+    ]
     for t in tools:
         if t.get("type") != "function":
             continue
         f = t["function"]
-        lines.append(f"- 工具名 {f['name']}：{f.get('description', '')}")
+        lines.append(f"- Tool {f['name']}: {f.get('description', '')}")
         if f.get("parameters"):
-            lines.append(f"  参数 JSON Schema：{json.dumps(f['parameters'], ensure_ascii=False)}")
+            lines.append(f"  Arguments JSON Schema: {json.dumps(f['parameters'], ensure_ascii=False)}")
     lines += [
-        "To call a tool, your entire reply must be exactly one JSON object of the form: {\"__tool__\": \"tool name\", \"__args__\": {arguments object}}",
-        'Example: {"__tool__": "bash", "__args__": {"command": "ls"}}',
-        "If no tool is needed, reply normally. Do not output any other JSON.",
+        "If no tool call is needed, reply to the user normally in plain text. Do not output any other JSON.",
     ]
     return "\n".join(lines)
 

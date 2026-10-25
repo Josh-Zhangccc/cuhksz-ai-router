@@ -25,6 +25,7 @@
 - [x] S3b 运行日志（2026-10-25）：runtime/router.ndjson 元数据 only（mode/latency/finish/tool_parse_ok，绝不记内容）+ --debug 完整落盘（runtime/debug/ 含 prompt，勿外传）
 - [x] S5 发布（2026-10-25）：README（三平台+警告+局限）+ docs/protocol.md + MIT；GitHub 私有仓 Josh-Zhangccc/cuhksz-ai-router，v0.1
 - [x] S7 超长 content 分轮投递（2026-10-25）：ZCode（33 工具全量定义 ~150K 字符）触发上游 content 长度硬限——实测 98,315 字符过 / 114,699 拒（与 token 密度无关，纯字符限）。解法定为分轮预热投递（零信息损失）：新会话 content 超 CHUNK_SAFE=80K 时按行边界分片，前 n-1 片带 transport notice（仅入库勿作答，其回复事件不下发防污染信封解析），末片不带 notice（形态与单轮全量一致，防注入防御误判），句柄经 start 事件串联；SMAP 中途态由前缀校验自愈。149K 工具集实测 tool_calls 语义正确；fresh/continue/小工具/流式回归通过
+- [x] S8 工具协议措辞收紧（2026-10-25，用户实测反馈）：emulated 协议下模型环境无真实 tool 通道、回复文本是唯一调用通道——把"必须回复纯 JSON 信封、零杂音（无散文/无 markdown 围栏/无解释）"硬约束前置到 preamble 第一句；残留中文标记（工具名/参数）英文化。实测：工具轮纯信封解析成功（content 零残留），无工具轮正常文本不受影响。目标 harness 由 ZCode 转向轻量 pi 系（用户偏好，ZCode 偏重）
 - [ ] S6 待办：/v1/messages 协议面；单轮多工具调用；限流感知退避（x-ratelimit-remaining）；客户端断连传播到上游
 
 ## Tasks
