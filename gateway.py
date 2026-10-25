@@ -35,15 +35,15 @@ ORIGIN = "https://ai.cuhk.edu.cn"
 POOL = "Students Pool"
 
 MODELS = {
+    # 别名 → 上游 approach_id。全部为 2026-10-25 网页实测抓取（非猜测）。
     "glm-5.3-flash-local": {"approach_id": "glm-5.3-flash", "note": "本地版·不计刷量"},
     "qwen3.8-27b-local":   {"approach_id": "qwen3.8-27b",   "note": "本地版·不计刷量"},
-    "glm-5.3":             {"approach_id": "glm-5.3"},
+    "claude-haiku-5-5":    {"approach_id": "claude-haiku-5-5"},
+    "doubao-seed-evolving":    {"approach_id": "doubao-seed-evolving"},
+    "doubao-seed-2-1-pro":     {"approach_id": "doubao-seed-2-1-pro-260915"},
+    "doubao-seed-2-1-turbo":   {"approach_id": "doubao-seed-2-1-turbo-260628"},
     "deepseek-v4-pro":     {"approach_id": "deepseek-v4-pro"},
-    "deepseek-v4.1-flash": {"approach_id": "deepseek-v4.1-flash"},
-    "doubao-seed-2.1-pro":   {"approach_id": "doubao-seed-2.1-pro"},
-    "doubao-seed-2.1-turbo": {"approach_id": "doubao-seed-2.1-turbo"},
-    "doubao-seed-evolving":  {"approach_id": "doubao-seed-evolving"},
-    "claude-haiku-5.5":    {"approach_id": "claude-haiku-5.5"},
+    "deepseek-flash":      {"approach_id": "deepseek-flash", "note": "网页名 DeepSeek V4.1 Flash"},
     "gemini-3.8-flash":    {"approach_id": "gemini-3.8-flash"},
     "gemini-3.5-flash-lite": {"approach_id": "gemini-3.5-flash-lite"},
     "minimax-m3":          {"approach_id": "minimax-m3"},

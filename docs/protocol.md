@@ -58,7 +58,23 @@ X-Service: chat-service
 
 - 响应头 `x-ratelimit-limit: 120` / `x-ratelimit-remaining: N`
 - 配额耗尽信号：429/402，或 body 含 quota/limit/余额/配额 等关键词
-- 模型目录：本地部署版（glm-5.3-flash / qwen3.8-27b，标"不计刷量"）；云端 Claude/豆包/DeepSeek/Gemini/MiniMax/GPT/GLM 各系
+- 模型目录（approach_id 为网页实测，2026-10-25；无统一命名规律，豆包带日期后缀、DeepSeek V4.1 Flash 实际叫 deepseek-flash）：
+
+  | 展示名 | approach_id |
+  |---|---|
+  | GLM 5.3 Flash（本地版） | glm-5.3-flash |
+  | Qwen3.8 27B（本地版） | qwen3.8-27b |
+  | Claude Haiku 5.5 | claude-haiku-5-5 |
+  | 豆包 Seed Evolving | doubao-seed-evolving |
+  | 豆包 Seed 2.1 Pro | doubao-seed-2-1-pro-260915 |
+  | 豆包 Seed 2.1 Turbo | doubao-seed-2-1-turbo-260628 |
+  | DeepSeek V4 Pro | deepseek-v4-pro |
+  | DeepSeek V4.1 Flash | deepseek-flash |
+  | Gemini 3.8 Flash | gemini-3.8-flash |
+  | Gemini 3.5 Flash-Lite | gemini-3.5-flash-lite |
+  | MiniMax M3 | minimax-m3 |
+  | GPT 6 Luna | gpt-6-luna |
+  | GLM 5.3（非本地） | 未抓到（UI 选择不生效），网关中已移除 |
 
 ## 已知特性
 
